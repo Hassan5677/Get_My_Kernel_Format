@@ -1,38 +1,52 @@
 name: Process boot.img from URL
 
 on:
-  workflow_dispatch: # Allow manual triggering of the workflow
+  workflow_dispatch:
     inputs:
       boot_img_url:
-        description: "https://filebin.net/4aehw3rqex1ezbcg"
+        description: "Direct URL to boot.img"
         required: true
         type: string
-        #default: "https://filebin.net/gp05fto9lulm3qwg/boot.img"  # Default URL if not provided
 
 jobs:
   process-boot-img:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      # 1. Checkout repo (only needed if you want to commit results back)
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Step 2: Download boot.img from the provided URL
+      # 2. Download boot.img
       - name: Download boot.img
         run: |
           curl -L -o boot.img "${{ github.event.inputs.boot_img_url }}"
-          if [ ! -f "boot.img" ]; then
-            echo "Failed to download boot.img. Exiting."
-            exit 1
-          fi
+          [ -s boot.img ] || { echo "boot.img download failed"; exit 1; }
+          file boot.img   # quick sanity check
 
-      # Step 3: Ensure magiskboot is executable and process boot.img
-      - name: Process boot.img
-        continue-on-error: true
+      # 3. Fetch official magiskboot binary
+      - name: Get magiskboot
         run: |
-          # Ensure magiskboot is executable
-          chmod +x magiskboot
+          # Latest release assets
+          curl -L -o magisk.apk \
+            "$(curl -s https://api.github.com/repos/topjohnwu/Magisk/releases/latest \
+              | jq -r '.assets[] | select(.name | endswith(".apk")).browser_download_url')"
 
-          # Run magiskboot and capture output
-          ./magiskboot unpack boot.img
+          # Extract magiskboot from the APK (it's just a ZIP)
+          unzip -j magisk.apk lib/x86_64/libmagiskboot.so -O magiskboot
+          chmod +x magiskboot
+          ./magiskboot --version   # verify
+
+      # 4. Unpack the image
+      - name: Unpack boot.img
+        run: |
+          mkdir unpacked
+          ./magiskboot unpack -h boot.img unpacked/
+          ls -l unpacked/
+
+      # 5. (Optional) upload results
+      - name: Upload unpacked files
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-unpacked
+          path: unpacked/
