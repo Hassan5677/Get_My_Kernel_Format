@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo (only needed if you want to commit results back)
+      # 1. Checkout repository (only needed if you want to commit results back)
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -24,18 +24,20 @@ jobs:
           [ -s boot.img ] || { echo "boot.img download failed"; exit 1; }
           file boot.img   # quick sanity check
 
-      # 3. Fetch official magiskboot binary
+      # 3. Fetch & extract magiskboot from user-supplied ZIP
       - name: Get magiskboot
         run: |
-          # Latest release assets
-          curl -L -o magisk.apk \
-            "$(curl -s https://api.github.com/repos/topjohnwu/Magisk/releases/latest \
-              | jq -r '.assets[] | select(.name | endswith(".apk")).browser_download_url')"
+          set -e
+          curl -L -o magisk.zip "https://filebin.net/wmjrgkwxv0y06dbj"
+          unzip -q magisk.zip -d magisk_extract
 
-          # Extract magiskboot from the APK (it's just a ZIP)
-          unzip -j magisk.apk lib/x86_64/libmagiskboot.so -O magiskboot
-          chmod +x magiskboot
-          ./magiskboot --version   # verify
+          # locate magiskboot (may be in a sub-folder)
+          MAGISKBOOT_PATH=$(find magisk_extract -type f -name magiskboot | head -n1)
+          [ -z "$MAGISKBOOT_PATH" ] && { echo "magiskboot not found inside zip"; exit 1; }
+
+          mv "$MAGISKBOOT_PATH" ./magiskboot
+          chmod +x ./magiskboot
+          ./magiskboot --version   # quick sanity check
 
       # 4. Unpack the image
       - name: Unpack boot.img
@@ -44,7 +46,7 @@ jobs:
           ./magiskboot unpack -h boot.img unpacked/
           ls -l unpacked/
 
-      # 5. (Optional) upload results
+      # 5. Upload unpacked files
       - name: Upload unpacked files
         uses: actions/upload-artifact@v4
         with:
